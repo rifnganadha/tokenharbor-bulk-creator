@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="tokenharbor-bulk-creator logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#070b1a"/>
+      <stop offset="1" stop-color="#0c1330"/>
+    </linearGradient>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset="0.5" stop-color="#60a5fa"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#5eead4"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect x="16" y="16" width="480" height="480" rx="98" fill="none" stroke="#1b2547" stroke-width="2"/>
+
+  <!-- Harbor: anchor ring -->
+  <circle cx="256" cy="196" r="66" fill="none" stroke="url(#g)" stroke-width="16" filter="url(#soft)"/>
+  <circle cx="256" cy="196" r="18" fill="none" stroke="url(#g)" stroke-width="12"/>
+
+  <!-- Harbor: token stack (waters / waves) -->
+  <g transform="translate(256 330)" stroke="url(#g2)" stroke-width="14" stroke-linecap="round" fill="none">
+    <path d="M-92 0 q46 -34 92 0 t92 0" opacity="0.95"/>
+    <path d="M-92 44 q46 -34 92 0 t92 0" opacity="0.7"/>
+    <path d="M-92 88 q46 -34 92 0 t92 0" opacity="0.45"/>
+  </g>
+
+  <!-- Plus badge -->
+  <g transform="translate(392 128)">
+    <circle cx="0" cy="0" r="42" fill="#070b1a" stroke="url(#g)" stroke-width="10"/>
+    <path d="M-18 0 H18 M0 -18 V18" stroke="#5eead4" stroke-width="11" stroke-linecap="round"/>
+  </g>
+</svg>

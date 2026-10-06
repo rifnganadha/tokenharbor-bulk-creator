@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build / cache
+dist/
+build/
+.cache/
+*.tsbuildinfo
+
+# Output artifacts — these contain live credentials. Never commit them.
+tokenharbor-accounts-*.json
+accounts.json
+*.local.json
+output/
+
+# Playwright
+playwright-report/
+test-results/
+.cache/ms-playwright/
+
+# Debug artifacts
+debug/
+debug-*.png
+debug-*.html
+*.trace.zip
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

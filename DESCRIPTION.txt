@@ -1,0 +1,36 @@
+tokenharbor-bulk-creator
+========================
+
+GitHub repository description (paste into the "Description" field):
+
+    Bulk, end-to-end provisioning of Token Harbor (tokenharbor.ai) accounts
+    and API keys through temp-email.dev disposable inboxes. Playwright-driven,
+    MIT, no CI.
+
+Short description (<= 350 chars, fits GitHub):
+
+    Bulk-provision Token Harbor (tokenharbor.ai) accounts + thk_live_ API keys
+    end to end, using temp-email.dev disposable inboxes for the emailed
+    verification link. Real browser via Playwright. No CI, no roadmap, no
+    releases.
+
+Topics (paste into "Topics"):
+
+    tokenharbor
+    token-harbor
+    llm
+    ai-gateway
+    automation
+    provisioning
+    api-key
+    account-creator
+    temporary-email
+    temp-email
+    playwright
+    nodejs
+    cli
+    bulk
+
+Website (optional): leave empty.
+
+Related machine-readable copy: repo-metadata.json

@@ -1,0 +1,56 @@
+{
+  "name": "tokenharbor-bulk-creator",
+  "version": "1.0.0",
+  "description": "Bulk, end-to-end provisioning of Token Harbor (tokenharbor.ai) accounts and API keys through temp-email.dev disposable inboxes. Playwright-driven, MIT, no CI.",
+  "type": "module",
+  "main": "src/index.mjs",
+  "bin": {
+    "tokenharbor-bulk-creator": "src/index.mjs"
+  },
+  "files": [
+    "src",
+    "docs/assets",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node src/index.mjs",
+    "create": "node src/index.mjs -n 1",
+    "batch": "node src/index.mjs -n 5 --concurrency 2",
+    "doctor": "node src/index.mjs --doctor",
+    "postinstall": "playwright install chromium"
+  },
+  "keywords": [
+    "tokenharbor",
+    "token-harbor",
+    "llm",
+    "ai-gateway",
+    "automation",
+    "provisioning",
+    "api-key",
+    "account-creator",
+    "temporary-email",
+    "temp-email",
+    "playwright",
+    "nodejs",
+    "cli",
+    "bulk"
+  ],
+  "author": "tokenharbor-bulk-creator contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/0xgetz/tokenharbor-bulk-creator#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xgetz/tokenharbor-bulk-creator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/0xgetz/tokenharbor-bulk-creator/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "playwright": "1.47.2"
+  }
+}
