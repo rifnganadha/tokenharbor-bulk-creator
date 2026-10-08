@@ -49,6 +49,8 @@ the page does the work, and the results are scraped from the rendered dashboard.
 - **Full onboarding** – signup → email verification → API key, end to end.
 - **Random identity** – emails, passwords (12+ chars) and key labels are unpredictable.
 - **Auto API keys** – named like `prod-token-7421`, prefix `thk_live_`.
+- **Session wiped** – once a key is minted, the browser's cookies and site data
+  are cleared and each account runs in its own isolated context.
 - **Rate-limit aware** – detects Token Harbor's "take a breath" throttle and backs off.
 - **Incremental output** – the JSON file is flushed after every account, so a
   crash never loses completed work.

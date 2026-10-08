@@ -3,9 +3,11 @@
  *
  * Two browser contexts are used per account — one for the Token Harbor session
  * and one for the disposable inbox — so opening the temporary inbox never
- * disturbs the platform session (separate cookie jars). With the default
- * temp-email.dev provider the inbox context hosts a long-lived page that is
- * polled for the verification link.
+ * disturbs the platform session (separate cookie jars). After the API key is
+ * created the platform session is wiped (`clearSiteData`), so this expects the
+ * platform context to belong to the single account being provisioned. With the
+ * default temp-email.dev provider the inbox context hosts a long-lived page
+ * that is polled for the verification link.
  *
  * @module core/provision
  */
@@ -28,6 +30,52 @@ export function classify(err) {
   if (m.includes("too many") || m.includes("rate limit") || m.includes("429")) return "rate-limit";
   if (m.includes("net::") || m.includes("timeout") || m.includes("econnreset")) return "network";
   return "other";
+}
+
+/**
+ * Destroy all site state left behind by the signed-in session: cookies,
+ * localStorage, sessionStorage, IndexedDB, Cache Storage and service workers
+ * for the site origin. Cookies live on the browser context, so this assumes the
+ * context is dedicated to a single account (see `provisionOne`).
+ *
+ * @param {import('playwright').BrowserContext} context
+ * @param {import('playwright').Page} page
+ */
+export async function clearSiteData(context, page) {
+  const origin = (() => {
+    try {
+      return new URL(page.url()).origin;
+    } catch {
+      return tokenharbor.SITE;
+    }
+  })();
+
+  // Origin-scoped storage. CDP is the most thorough route on Chromium; fall
+  // back to clearing the web-storage APIs in-page for other engines.
+  let handled = false;
+  try {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Storage.clearDataForOrigin", { origin, storageTypes: "all" });
+    await cdp.detach().catch(() => {});
+    handled = true;
+  } catch {
+    /* not Chromium or CDP unavailable — fall through to in-page clearing */
+  }
+  if (!handled) {
+    await page
+      .evaluate(async () => {
+        try { localStorage.clear(); } catch {}
+        try { sessionStorage.clear(); } catch {}
+        try {
+          const dbs = (await indexedDB.databases?.()) || [];
+          for (const { name } of dbs) if (name) indexedDB.deleteDatabase(name);
+        } catch {}
+      })
+      .catch(() => {});
+  }
+
+  // Cookies are shared across the whole context, so clear them last.
+  await context.clearCookies().catch(() => {});
 }
 
 /**
@@ -78,6 +126,11 @@ async function attempt(platformContext, inboxContext, opts, attemptNo) {
     // 5. Create the API key.
     const apiKey = await tokenharbor.createApiKey(platformPage, keyName);
 
+    // 6. The API key is all we need from this session, so sign out and erase
+    //    the browser's cookies and stored site data before moving on.
+    log.step("clearing session and site data");
+    await clearSiteData(platformContext, platformPage);
+
     return {
       ok: true,
       email,
@@ -113,6 +166,10 @@ void desiredAddress;
 
 /**
  * Provision a single account with retries and backoff.
+ *
+ * `platformContext` is treated as belonging to this account alone: its cookies
+ * and site data are cleared after a successful run, so do not share it with
+ * other in-flight accounts.
  *
  * @param {import('playwright').BrowserContext} platformContext
  * @param {import('playwright').BrowserContext} inboxContext

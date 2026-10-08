@@ -147,8 +147,6 @@ async function main() {
     viewport: { width: 1366, height: 900 },
     ...(proxy ? { proxy } : {}),
   };
-  const platformContext = await browser.newContext(baseContextOpts);
-  const inboxContext = await browser.newContext(baseContextOpts);
 
   const results = [];
   const flush = async () => writeFile(outFile, JSON.stringify(results.filter(Boolean), null, 2));
@@ -159,19 +157,30 @@ async function main() {
       const i = next++;
       if (i >= opts.count) return;
       if (!opts.quiet) log.raw(color.dim(`\n── account ${i + 1}/${opts.count} ──`));
-      const r = await provisionOne(platformContext, inboxContext, {
-        inboxProvider: opts.inboxProvider,
-        mailBaseUrl: opts.mailBaseUrl,
-        mailboxDomain: opts.mailboxDomain,
-        inboxApiKey: opts.inboxApiKey,
-        timeout: opts.timeout,
-        turnstileTimeout: opts.turnstileTimeout,
-        retries: opts.retries,
-        password: opts.password,
-        keyName: opts.keyName,
-      });
-      results[i] = r;
-      await flush();
+
+      // One isolated browser context per account: separate cookie jars and
+      // storage keep concurrent workers from sharing a signed-in session, and
+      // let us destroy everything (session included) once the account is done.
+      const platformContext = await browser.newContext(baseContextOpts);
+      const inboxContext = await browser.newContext(baseContextOpts);
+      try {
+        const r = await provisionOne(platformContext, inboxContext, {
+          inboxProvider: opts.inboxProvider,
+          mailBaseUrl: opts.mailBaseUrl,
+          mailboxDomain: opts.mailboxDomain,
+          inboxApiKey: opts.inboxApiKey,
+          timeout: opts.timeout,
+          turnstileTimeout: opts.turnstileTimeout,
+          retries: opts.retries,
+          password: opts.password,
+          keyName: opts.keyName,
+        });
+        results[i] = r;
+        await flush();
+      } finally {
+        await platformContext.close().catch(() => {});
+        await inboxContext.close().catch(() => {});
+      }
     }
   }
 

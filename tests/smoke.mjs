@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { buildOptions, parseProxy } from "../src/utils/config.mjs";
 import { randomEmailLocal, randomKeyName, randomPassword } from "../src/utils/random.mjs";
 import { extractVerificationLink, createSmtpDevReader, createInbox, VERIFY_LINK_RE } from "../src/inbox/index.mjs";
+import { clearSiteData } from "../src/core/provision.mjs";
 
 const queue = [];
 function test(name, fn) {
@@ -159,6 +160,53 @@ test("createInbox requires an API key for smtp-dev", () => {
     () => createInbox("smtp-dev", null, {}),
     /requires --inbox-api-key/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// clearSiteData (mocked browser)
+// ---------------------------------------------------------------------------
+
+test("clearSiteData clears cookies and origin storage via CDP", async () => {
+  const sent = [];
+  let evaluated = false;
+  let clearedCookies = false;
+  const context = {
+    newCDPSession: async () => ({
+      send: async (method, params) => sent.push([method, params]),
+      detach: async () => {},
+    }),
+    clearCookies: async () => { clearedCookies = true; },
+  };
+  const page = {
+    url: () => "https://tokenharbor.ai/dashboard",
+    evaluate: async () => { evaluated = true; },
+  };
+
+  await clearSiteData(context, page);
+
+  assert.deepEqual(sent, [
+    ["Storage.clearDataForOrigin", { origin: "https://tokenharbor.ai", storageTypes: "all" }],
+  ]);
+  assert.equal(clearedCookies, true);
+  assert.equal(evaluated, false); // CDP handled storage; no in-page fallback
+});
+
+test("clearSiteData falls back to in-page clearing without CDP", async () => {
+  let evaluated = false;
+  let clearedCookies = false;
+  const context = {
+    newCDPSession: async () => { throw new Error("CDP unavailable"); },
+    clearCookies: async () => { clearedCookies = true; },
+  };
+  const page = {
+    url: () => "about:blank",
+    evaluate: async () => { evaluated = true; },
+  };
+
+  await clearSiteData(context, page);
+
+  assert.equal(evaluated, true);
+  assert.equal(clearedCookies, true);
 });
 
 // ---------------------------------------------------------------------------

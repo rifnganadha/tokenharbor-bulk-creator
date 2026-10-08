@@ -92,11 +92,13 @@ export async function signup(page, email, password, opts = {}) {
   await passInput.waitFor({ state: "visible", timeout: 15000 });
   await passInput.fill(password);
 
+  await sleep(10000);
+
   await Promise.all([
     page.waitForLoadState("domcontentloaded").catch(() => {}),
     page.getByRole("button", { name: /create account/i }).first().click(),
   ]);
-  await sleep(3000);
+  await sleep(10000);
 
   let text = await textOf(page);
 
