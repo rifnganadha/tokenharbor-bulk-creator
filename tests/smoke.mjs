@@ -9,18 +9,11 @@
 import assert from "node:assert/strict";
 import { buildOptions, parseProxy } from "../src/utils/config.mjs";
 import { randomEmailLocal, randomKeyName, randomPassword } from "../src/utils/random.mjs";
-import { extractVerificationLink, VERIFY_LINK_RE } from "../src/inbox/index.mjs";
+import { extractVerificationLink, createSmtpDevReader, createInbox, VERIFY_LINK_RE } from "../src/inbox/index.mjs";
 
-let passed = 0;
+const queue = [];
 function test(name, fn) {
-  try {
-    fn();
-    passed++;
-    console.log(`  ok  ${name}`);
-  } catch (e) {
-    console.error(`FAIL  ${name}\n      ${e.message}`);
-    process.exitCode = 1;
-  }
+  queue.push([name, fn]);
 }
 
 test("randomEmailLocal is lower-case alphanumeric", () => {
@@ -79,5 +72,107 @@ test("parseProxy handles credentials and bare host", () => {
 test("buildOptions rejects unknown flags", () => {
   assert.throws(() => buildOptions(["node", "x", "--nope"]), /unknown option/);
 });
+
+// ---------------------------------------------------------------------------
+// smtp.dev reader (mocked fetch)
+// ---------------------------------------------------------------------------
+
+/** Minimal fetch Response stand-in for the reader's `.text()`/`.ok` usage. */
+function jsonResponse(data, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => (data == null ? "" : JSON.stringify(data)),
+  };
+}
+
+/** A fetchImpl that serves the smtp.dev routes the reader relies on. */
+function smtpDevFetch(seen) {
+  return async (url, init = {}) => {
+    seen.push({ url, init });
+    const { pathname } = new URL(url);
+    if (pathname === "/domains") {
+      return jsonResponse({
+        member: [
+          { id: "d-off", domain: "off.test", isActive: false },
+          { id: "d-on", domain: "inbox.test", isActive: true },
+        ],
+      });
+    }
+    if (pathname === "/accounts" && init.method === "POST") {
+      const body = JSON.parse(init.body);
+      return jsonResponse(
+        { id: "acct-1", address: body.address, mailboxes: [{ id: "mb-1", path: "INBOX" }] },
+        201,
+      );
+    }
+    if (pathname === "/accounts/acct-1/mailboxes/mb-1/messages") {
+      return jsonResponse({
+        member: [
+          {
+            from: { address: "verify@tokenharbor.ai", name: "Token Harbor" },
+            subject: "Verify your email",
+            text: "Confirm: https://tokenharbor.ai/verify-email?token=abc.DEF-123",
+          },
+        ],
+      });
+    }
+    if (pathname === "/accounts/acct-1" && init.method === "DELETE") {
+      return jsonResponse(null, 204);
+    }
+    throw new Error(`unexpected request: ${init.method || "GET"} ${pathname}`);
+  };
+}
+
+test("smtp.dev reader picks an active domain, creates an inbox, finds the link", async () => {
+  const seen = [];
+  const reader = createSmtpDevReader({ apiKey: "smtplabs_test", fetchImpl: smtpDevFetch(seen) });
+
+  const box = await reader.createInbox();
+  assert.match(box.address, /^[a-z]+\d{6}@inbox\.test$/);
+  assert.equal(box.provider, "smtp.dev");
+
+  // Auth header is sent on every request.
+  assert.ok(seen.every((c) => c.init.headers["X-API-KEY"] === "smtplabs_test"));
+
+  const link = await reader.waitForVerificationLink(box.address, { timeout: 2000 });
+  assert.equal(link, "https://tokenharbor.ai/verify-email?token=abc.DEF-123");
+
+  await reader.close();
+  assert.ok(seen.some((c) => c.init.method === "DELETE" && c.url.endsWith("/accounts/acct-1")));
+});
+
+test("smtp.dev reader honors a pinned domain", async () => {
+  const seen = [];
+  const reader = createSmtpDevReader({
+    apiKey: "k",
+    domain: "pinned.test",
+    fetchImpl: smtpDevFetch(seen),
+  });
+  const box = await reader.createInbox();
+  assert.match(box.address, /@pinned\.test$/);
+  assert.ok(!seen.some((c) => new URL(c.url).pathname === "/domains"));
+});
+
+test("createInbox requires an API key for smtp-dev", () => {
+  assert.throws(
+    () => createInbox("smtp-dev", null, {}),
+    /requires --inbox-api-key/,
+  );
+});
+
+// ---------------------------------------------------------------------------
+
+let passed = 0;
+for (const [name, fn] of queue) {
+  try {
+    await fn();
+    passed++;
+    console.log(`  ok  ${name}`);
+  } catch (e) {
+    console.error(`FAIL  ${name}\n      ${e.message}`);
+    process.exitCode = 1;
+  }
+}
 
 console.log(`\n${passed} test(s) passed`);

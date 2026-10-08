@@ -5,7 +5,7 @@
  * reader's job is to produce a fresh address and hand back the verification URL
  * found in the newest message.
  *
- * Two backends ship:
+ * Three backends ship:
  *
  *   - `temp-email-dev` (default): drives the temp-email.dev web UI in a browser.
  *     The site is a Next.js server-action app (`generateTempEmail`,
@@ -15,18 +15,26 @@
  *     link. The address is generated on demand by the provider, so the caller
  *     cannot choose the local-part; we discover it from the page instead.
  *
+ *   - `smtp-dev`: the [smtp.dev](https://smtp.dev/docs/api) email-testing API.
+ *     Authenticated with an `X-API-KEY` header, it exposes domains, accounts,
+ *     mailboxes and messages. We pick a domain, create an account, then poll the
+ *     account's INBOX for the verification link. No browser needed — the reader
+ *     uses global `fetch` (Node 18+). Selected with `--inbox-provider smtp-dev`
+ *     and `--inbox-api-key` (or `TH_INBOX_API_KEY`).
+ *
  *   - `custom`: any provider exposing the classic temp-mail JSON REST shape
  *     (`GET {base}/domains`, `POST {base}/accounts`, `GET {base}/messages`),
  *     e.g. an instance of mail.tm / mail.gw. Selected with `--inbox-provider custom`
  *     and `--mail-base-url`.
  *
- * Both return the same shape: `{ address, provider }` from `createInbox`, and a
+ * All return the same shape: `{ address, provider }` from `createInbox`, and a
  * URL string from `waitForVerificationLink`.
  *
  * @module inbox
  */
 
 import { log } from "../utils/logger.mjs";
+import { randomEmailLocal } from "../utils/random.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -265,14 +273,144 @@ export function createRestReader(cfg) {
 }
 
 /**
+ * Reader for the smtp.dev email-testing API (https://smtp.dev/docs/api).
+ *
+ * Auth is a static `X-API-KEY` header. The lifecycle is:
+ *   GET  /domains                                              → pick a domain
+ *   POST /accounts            { address, password }            → create mailbox
+ *   GET  /accounts/{id}/mailboxes/{mailboxId}/messages         → poll INBOX
+ *   DELETE /accounts/{id}                                      → clean up
+ *
+ * Collection responses use the API-Platform `member` shape. No browser needed;
+ * uses global `fetch` (Node 18+).
+ *
+ * @param {{baseUrl?:string, apiKey:string, domain?:string, password?:string, fetchImpl?:typeof fetch}} cfg
+ */
+export function createSmtpDevReader(cfg) {
+  const base = (cfg.baseUrl || "https://api.smtp.dev").replace(/\/$/, "");
+  const doFetch = cfg.fetchImpl || fetch;
+  let accountId = null;
+  let inboxMailboxId = null;
+  let address = null;
+
+  async function api(path, init = {}) {
+    const res = await doFetch(`${base}${path}`, {
+      ...init,
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "X-API-KEY": cfg.apiKey,
+        ...(init.headers || {}),
+      },
+    });
+    const text = await res.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = text;
+    }
+    if (!res.ok) {
+      throw new Error(
+        `smtp.dev ${res.status} ${path}: ${typeof data === "string" ? data : JSON.stringify(data)}`,
+      );
+    }
+    return data;
+  }
+
+  /** Unwrap an API-Platform collection (`{ member: [...] }`) or a bare array. */
+  const unwrap = (data) => (Array.isArray(data) ? data : data?.member || []);
+
+  return {
+    provider: "smtp.dev",
+
+    async createInbox() {
+      let domain = cfg.domain;
+      if (!domain) {
+        const list = unwrap(await api("/domains"));
+        const active = list.filter((d) => d.isActive !== false);
+        const chosen = active[0] || list[0];
+        if (!chosen) throw new Error("smtp.dev returned no domains");
+        domain = chosen.domain;
+      }
+
+      address = `${randomEmailLocal()}@${domain}`;
+      const password = cfg.password || Math.random().toString(36).slice(2, 16);
+
+      const account = await api("/accounts", {
+        method: "POST",
+        body: JSON.stringify({ address, password, isActive: true }),
+      });
+      accountId = account?.id || account?.["@id"] || null;
+      if (!accountId) throw new Error("smtp.dev create account returned no id");
+
+      // Accounts are created with an INBOX mailbox; find its id, falling back
+      // to a lookup if the create response omitted it.
+      const boxes = account.mailboxes || [];
+      inboxMailboxId =
+        boxes.find((m) => String(m.path).toUpperCase() === "INBOX")?.id || null;
+      if (!inboxMailboxId) {
+        const list = unwrap(await api(`/accounts/${accountId}/mailboxes`));
+        inboxMailboxId =
+          list.find((m) => String(m.path).toUpperCase() === "INBOX")?.id ||
+          list[0]?.id ||
+          null;
+      }
+      if (!inboxMailboxId) throw new Error("smtp.dev account has no INBOX mailbox");
+
+      log.info(`inbox ready: ${address}`);
+      return { address, provider: "smtp.dev" };
+    },
+
+    async waitForVerificationLink(_address, opts = {}) {
+      const timeout = opts.timeout ?? 180000;
+      const deadline = Date.now() + timeout;
+      while (Date.now() < deadline) {
+        const list = unwrap(
+          await api(`/accounts/${accountId}/mailboxes/${inboxMailboxId}/messages`),
+        );
+        for (const msg of list) {
+          const from = JSON.stringify(msg.from || msg.sender || "").toLowerCase();
+          const subject = String(msg.subject || "").toLowerCase();
+          const looksRight =
+            from.includes("tokenharbor") ||
+            subject.includes("verify") ||
+            subject.includes("token harbor");
+          const body = `${msg.intro || ""} ${msg.text || ""} ${JSON.stringify(msg.html || "")}`;
+          const link = extractVerificationLink(body);
+          if (link && looksRight) return link;
+        }
+        await sleep(3000);
+      }
+      throw new Error("timed out waiting for the Token Harbor verification email");
+    },
+
+    async close() {
+      if (accountId) await api(`/accounts/${accountId}`, { method: "DELETE" }).catch(() => {});
+    },
+  };
+}
+
+/**
  * Factory used by the orchestrator.
  *
- * @param {string} name  "temp-email-dev" | "custom"
+ * @param {string} name  "temp-email-dev" | "smtp-dev" | "custom"
  * @param {import('playwright').Page|null} page
  * @param {object} [opts]
  */
 export function createInbox(name, page, opts = {}) {
-  if (name === "custom" || name === "rest") {
+  const provider = String(name || "").toLowerCase();
+  if (provider === "smtp-dev" || provider === "smtpdev" || provider === "smtp.dev") {
+    if (!opts.inboxApiKey) {
+      throw new Error("--inbox-provider smtp-dev requires --inbox-api-key (TH_INBOX_API_KEY)");
+    }
+    return createSmtpDevReader({
+      baseUrl: opts.mailBaseUrl || "https://api.smtp.dev",
+      apiKey: opts.inboxApiKey,
+      domain: opts.mailboxDomain,
+    });
+  }
+  if (provider === "custom" || provider === "rest") {
     if (!opts.mailBaseUrl) throw new Error("--inbox-provider custom requires --mail-base-url");
     return createRestReader({ baseUrl: opts.mailBaseUrl, domain: opts.mailboxDomain });
   }

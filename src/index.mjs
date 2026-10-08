@@ -35,9 +35,10 @@ function help() {
     -t, --timeout MS            max wait for the verification email (default 180000)
         --turnstile-timeout MS  max wait for Cloudflare (no-op; kept for parity) (default 150000)
         --retries N             retries per account              (default 3)
-        --inbox-provider NAME   temp-email-dev | custom          (default temp-email-dev)
-        --mail-base-url URL     base URL for the 'custom' inbox provider
-        --mailbox-domain D      pin a domain for the 'custom' provider
+        --inbox-provider NAME   temp-email-dev | smtp-dev | custom (default temp-email-dev)
+        --mail-base-url URL     base URL for the 'smtp-dev' / 'custom' inbox provider
+        --mailbox-domain D      pin an inbox domain (smtp-dev / custom)
+        --inbox-api-key KEY     API key for the 'smtp-dev' provider (or TH_INBOX_API_KEY)
         --password PW           fixed password (>=12 chars; default random)
         --key-name NAME         fixed API-key label (default random)
         --proxy URL             proxy for the browser            (or TH_PROXY)
@@ -162,6 +163,7 @@ async function main() {
         inboxProvider: opts.inboxProvider,
         mailBaseUrl: opts.mailBaseUrl,
         mailboxDomain: opts.mailboxDomain,
+        inboxApiKey: opts.inboxApiKey,
         timeout: opts.timeout,
         turnstileTimeout: opts.turnstileTimeout,
         retries: opts.retries,

@@ -58,6 +58,7 @@ async function attempt(platformContext, inboxContext, opts, attemptNo) {
     inbox = createInbox(opts.inboxProvider, inboxPage, {
       mailBaseUrl: opts.mailBaseUrl,
       mailboxDomain: opts.mailboxDomain,
+      inboxApiKey: opts.inboxApiKey,
     });
     const created = await inbox.createInbox();
     email = created.address;

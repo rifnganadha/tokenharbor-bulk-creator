@@ -50,6 +50,7 @@ export function buildOptions(argv, env = process.env) {
     inboxProvider: cfg.TH_INBOX_PROVIDER || "temp-email-dev",
     mailBaseUrl: cfg.TH_MAIL_BASE_URL || null,
     mailboxDomain: cfg.TH_MAILBOX_DOMAIN || null,
+    inboxApiKey: cfg.TH_INBOX_API_KEY || cfg.TH_SMTPDEV_API_KEY || null,
     password: cfg.TH_PASSWORD || null,
     keyName: cfg.TH_KEY_NAME || null,
     timeout: asInt(cfg.TH_TIMEOUT, 180000),
@@ -80,6 +81,7 @@ export function buildOptions(argv, env = process.env) {
     else if (k === "--inbox-provider") (opts.inboxProvider = need(i, k)), i++;
     else if (k === "--mail-base-url") (opts.mailBaseUrl = need(i, k)), i++;
     else if (k === "--mailbox-domain") (opts.mailboxDomain = need(i, k)), i++;
+    else if (k === "--inbox-api-key") (opts.inboxApiKey = need(i, k)), i++;
     else if (k === "--password") (opts.password = need(i, k)), i++;
     else if (k === "--key-name") (opts.keyName = need(i, k)), i++;
     else if (k === "--proxy") (opts.proxy = need(i, k)), i++;

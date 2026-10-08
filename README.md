@@ -21,7 +21,8 @@
 ---
 
 `tokenharbor-bulk-creator` ties three things together in one reproducible pipeline: a
-disposable mailbox provider ([temp-email.dev](https://www.temp-email.dev)), a real browser that
+disposable mailbox provider ([temp-email.dev](https://www.temp-email.dev) by default,
+or [smtp.dev](https://smtp.dev/docs/api)), a real browser that
 runs Token Harbor's signup and email verification exactly as a person would, and the
 Token Harbor dashboard API-key flow. Feed it a count, and it returns a JSON table of
 ready-to-use `thk_live_…` keys.
@@ -44,7 +45,7 @@ the page does the work, and the results are scraped from the rendered dashboard.
 
 ## Features
 
-- **Disposable mailboxes** – creates a unique temp-email.dev inbox per account.
+- **Disposable mailboxes** – creates a unique temp-email.dev (or smtp.dev) inbox per account.
 - **Full onboarding** – signup → email verification → API key, end to end.
 - **Random identity** – emails, passwords (12+ chars) and key labels are unpredictable.
 - **Auto API keys** – named like `prod-token-7421`, prefix `thk_live_`.
@@ -53,7 +54,7 @@ the page does the work, and the results are scraped from the rendered dashboard.
   crash never loses completed work.
 - **Concurrency** – optional parallel workers.
 - **Retries** – per-account attempts with fresh identities on failure.
-- **Pluggable inbox** – `temp-email-dev` (browser) or any classic `custom` temp-mail REST API.
+- **Pluggable inbox** – `temp-email-dev` (browser), `smtp-dev` (API key), or any classic `custom` temp-mail REST API.
 - **Structured logging** – colourised, timestamped console output.
 
 ## Architecture
@@ -66,7 +67,7 @@ src/
 ├── tokenharbor/
 │   └── client.mjs        # signup, verification, API-key creation (Playwright)
 ├── inbox/
-│   └── index.mjs         # temp-email.dev reader + REST reader + link parsing
+│   └── index.mjs         # temp-email.dev + smtp.dev + REST readers, link parsing
 └── utils/
     ├── config.mjs        # flags > .env > defaults, proxy parsing
     ├── random.mjs        # random emails, passwords, key labels
@@ -114,9 +115,10 @@ node src/index.mjs --doctor
 | `-t, --timeout` | `180000` | Max ms to wait for the verification email |
 | `--turnstile-timeout` | `150000` | Max ms to wait for Cloudflare (no-op; kept for parity) |
 | `--retries` | `3` | Attempts per account |
-| `--inbox-provider` | `temp-email-dev` | `temp-email-dev` \| `custom` |
-| `--mail-base-url` | – | Base URL for the `custom` inbox provider |
-| `--mailbox-domain` | auto | Pin a mail domain for the `custom` provider |
+| `--inbox-provider` | `temp-email-dev` | `temp-email-dev` \| `smtp-dev` \| `custom` |
+| `--mail-base-url` | – | Base URL for the `smtp-dev` (default `https://api.smtp.dev`) or `custom` inbox provider |
+| `--mailbox-domain` | auto | Pin a mail domain for the `smtp-dev` / `custom` provider |
+| `--inbox-api-key` | – | API key for the `smtp-dev` provider (or `TH_INBOX_API_KEY`) |
 | `--password` | random | Fixed password (>= 12 characters) for all accounts |
 | `--key-name` | random | Fixed API-key label |
 | `--proxy` | – | Proxy URL for the browser |
@@ -134,10 +136,25 @@ Environment variables mirror every flag (`TH_COUNT`, `TH_PROXY`, …). See
 | Provider | Flag value | How it works |
 | --- | --- | --- |
 | temp-email.dev *(default)* | `temp-email-dev` | Drives the site's UI in a browser; the site generates the address, which the script reads back. |
+| smtp.dev | `smtp-dev` | Uses the [smtp.dev email-testing API](https://smtp.dev/docs/api). Picks an active domain, creates an account, and polls its INBOX. Needs `--inbox-api-key` (create one at [smtp.dev/tokens](https://smtp.dev/tokens/)). |
 | Custom REST | `custom` | Any classic temp-mail JSON API (`GET /domains`, `POST /accounts`, `GET /messages`), e.g. mail.tm / mail.gw. Set `--mail-base-url`. |
 
 With `temp-email-dev` a fresh browser context is used per account, so each run gets
 its own inbox even though the site persists the address in `localStorage`.
+
+### smtp.dev
+
+Grab an API key from [smtp.dev/tokens](https://smtp.dev/tokens/), then:
+
+```bash
+node src/index.mjs -n 3 --inbox-provider smtp-dev --inbox-api-key smtplabs_xxx
+```
+
+Or set `TH_INBOX_PROVIDER=smtp-dev` and `TH_INBOX_API_KEY=smtplabs_xxx` in `.env`.
+The reader calls `GET /domains`, `POST /accounts`, and
+`GET /accounts/{id}/mailboxes/{mailboxId}/messages` (auth via the `X-API-KEY`
+header) and deletes the account when it is done. No browser is needed for the
+inbox, though the Token Harbor side still runs through Playwright.
 
 ## Rate limits
 
