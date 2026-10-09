@@ -11,6 +11,7 @@ import { buildOptions, parseProxy } from "../src/utils/config.mjs";
 import { randomEmailLocal, randomKeyName, randomPassword } from "../src/utils/random.mjs";
 import { extractVerificationLink, createSmtpDevReader, createInbox, VERIFY_LINK_RE } from "../src/inbox/index.mjs";
 import { clearSiteData } from "../src/core/provision.mjs";
+import { DEFAULT_URL, DEFAULT_PASSWORD, normalizeBaseUrl } from "../src/ninerouter/client.mjs";
 
 const queue = [];
 function test(name, fn) {
@@ -72,6 +73,48 @@ test("parseProxy handles credentials and bare host", () => {
 
 test("buildOptions rejects unknown flags", () => {
   assert.throws(() => buildOptions(["node", "x", "--nope"]), /unknown option/);
+});
+
+// ---------------------------------------------------------------------------
+// 9Router options
+// ---------------------------------------------------------------------------
+
+test("9Router options fall back to built-in defaults", () => {
+  const o = buildOptions(["node", "x"], {
+    TH_CONNECT_9ROUTER: "",
+    TH_9ROUTER_URL: "",
+    TH_9ROUTER_PASSWORD: "",
+  });
+  assert.equal(o.connectNineRouter, false);
+  assert.equal(o.nineRouterUrl, DEFAULT_URL);
+  assert.equal(o.nineRouterPassword, DEFAULT_PASSWORD);
+});
+
+test("9Router options honor CLI flags", () => {
+  const o = buildOptions(
+    ["node", "x", "--connect-9router", "--9router-url", "https://r.example.com/", "--9router-password", "pw"],
+    {},
+  );
+  assert.equal(o.connectNineRouter, true);
+  assert.equal(o.nineRouterUrl, "https://r.example.com/");
+  assert.equal(o.nineRouterPassword, "pw");
+});
+
+test("9Router options honor the environment", () => {
+  const o = buildOptions(["node", "x"], {
+    TH_CONNECT_9ROUTER: "1",
+    TH_9ROUTER_URL: "https://env.example.com",
+    TH_9ROUTER_PASSWORD: "envpw",
+  });
+  assert.equal(o.connectNineRouter, true);
+  assert.equal(o.nineRouterUrl, "https://env.example.com");
+  assert.equal(o.nineRouterPassword, "envpw");
+});
+
+test("normalizeBaseUrl adds a scheme and strips trailing slashes", () => {
+  assert.equal(normalizeBaseUrl(), DEFAULT_URL);
+  assert.equal(normalizeBaseUrl("localhost:20128"), "http://localhost:20128");
+  assert.equal(normalizeBaseUrl("https://gateway.example.com///"), "https://gateway.example.com");
 });
 
 // ---------------------------------------------------------------------------

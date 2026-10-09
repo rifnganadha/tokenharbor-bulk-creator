@@ -60,6 +60,10 @@ export function buildOptions(argv, env = process.env) {
     quiet: false,
     keepBrowser: asBool(cfg.TH_KEEP_BROWSER),
     proxy: cfg.TH_PROXY || cfg.PROXY_URL || cfg.HTTPS_PROXY || cfg.HTTP_PROXY || null,
+    // 9Router connection (opt-in via --connect-9router / TH_CONNECT_9ROUTER).
+    connectNineRouter: asBool(cfg.TH_CONNECT_9ROUTER),
+    nineRouterUrl: cfg.TH_9ROUTER_URL || "http://localhost:20128",
+    nineRouterPassword: cfg.TH_9ROUTER_PASSWORD || "123456",
     help: false,
     version: false,
     doctor: false,
@@ -85,6 +89,10 @@ export function buildOptions(argv, env = process.env) {
     else if (k === "--password") (opts.password = need(i, k)), i++;
     else if (k === "--key-name") (opts.keyName = need(i, k)), i++;
     else if (k === "--proxy") (opts.proxy = need(i, k)), i++;
+    else if (k === "--connect-9router" || k === "--9router") opts.connectNineRouter = true;
+    else if (k === "--no-9router") opts.connectNineRouter = false;
+    else if (k === "--9router-url") (opts.nineRouterUrl = need(i, k)), i++;
+    else if (k === "--9router-password") (opts.nineRouterPassword = need(i, k)), i++;
     else if (k === "--headful") opts.headful = true;
     else if (k === "--keep-browser") opts.keepBrowser = true;
     else if (k === "-q" || k === "--quiet") opts.quiet = true;

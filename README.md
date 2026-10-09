@@ -8,7 +8,7 @@
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-18%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node"></a>
   <a href="https://playwright.dev/"><img src="https://img.shields.io/badge/playwright-%E2%9C%94-2EAD33?style=for-the-badge&logo=playwright&logoColor=white" alt="Playwright"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22e6a5?style=for-the-badge" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/tests-9%20passed-39d0ff?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-18%20passed-39d0ff?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Tests">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-7c5cff?style=for-the-badge" alt="Platform">
 </p>
 
@@ -49,6 +49,8 @@ the page does the work, and the results are scraped from the rendered dashboard.
 - **Full onboarding** – signup → free-models opt-in → email verification → API key, end to end.
 - **Random identity** – emails, passwords (12+ chars) and key labels are unpredictable.
 - **Auto API keys** – named like `prod-token-7421`, prefix `thk_live_`.
+- **9Router hand-off** *(optional)* – logs into a [9Router](https://github.com/decolua/9router)
+  gateway and attaches each new key to its Token Harbor provider automatically.
 - **Session wiped** – once a key is minted, the browser's cookies and site data
   are cleared and each account runs in its own isolated context.
 - **Rate-limit aware** – detects Token Harbor's "take a breath" throttle and backs off.
@@ -68,6 +70,8 @@ src/
 │   └── provision.mjs     # end-to-end flow, retries, result record
 ├── tokenharbor/
 │   └── client.mjs        # signup, verification, API-key creation (Playwright)
+├── ninerouter/
+│   └── client.mjs        # 9Router login + Token Harbor add-key flow (Playwright)
 ├── inbox/
 │   └── index.mjs         # temp-email.dev + smtp.dev + REST readers, link parsing
 └── utils/
@@ -123,6 +127,9 @@ node src/index.mjs --doctor
 | `--inbox-api-key` | – | API key for the `smtp-dev` provider (or `TH_INBOX_API_KEY`) |
 | `--password` | random | Fixed password (>= 12 characters) for all accounts |
 | `--key-name` | random | Fixed API-key label |
+| `--connect-9router` | off | Connect each new key to a 9Router gateway (or `TH_CONNECT_9ROUTER=1`) |
+| `--9router-url` | `http://localhost:20128` | 9Router dashboard URL (or `TH_9ROUTER_URL`) |
+| `--9router-password` | `123456` | 9Router dashboard password (or `TH_9ROUTER_PASSWORD`) |
 | `--proxy` | – | Proxy URL for the browser |
 | `--headful` | off | Show the browser |
 | `--keep-browser` | off | Leave the browser open at the end (debugging) |
@@ -186,6 +193,7 @@ kind `rate-limit` and is **not** retried further. For large batches keep
       "free_models": true,
       "api_base": "https://api.tokenharbor.ai/v1",
       "email_provider": "temp-email.dev",
+      "nine_router": { "ok": true, "url": "http://localhost:20128", "name": "swiftfox482913@swiftemail.dev", "elapsed_ms": 5210 },
       "elapsed_ms": 41230,
       "created_at": "2026-01-01T12:00:00+00:00"
     }
@@ -194,7 +202,48 @@ kind `rate-limit` and is **not** retried further. For large batches keep
 ```
 
 The file is rewritten after every account, so an interrupted batch still contains
-everything finished up to that point.
+everything finished up to that point. The optional `nine_router` object is added
+only when `--connect-9router` is used (see below).
+
+## Connecting to 9Router
+
+[9Router](https://github.com/decolua/9router) is a self-hosted AI gateway that
+fronts provider API keys. With `--connect-9router` the tool signs into your
+9Router dashboard and registers each freshly minted Token Harbor key as a
+connection, so a new account is usable from the gateway immediately.
+
+```bash
+# Local 9Router (defaults: http://localhost:20128, password 123456)
+node src/index.mjs -n 5 --connect-9router
+
+# Remote / custom install
+node src/index.mjs -n 5 --connect-9router \
+  --9router-url https://9router.example.com --9router-password 's3cret'
+```
+
+Or set it once in `.env` and just pass the flag:
+
+```dotenv
+TH_CONNECT_9ROUTER=0
+TH_9ROUTER_URL=https://9router.example.com
+TH_9ROUTER_PASSWORD=change-me
+```
+
+The connection mirrors the dashboard by hand:
+
+1. **Login** – opens `{url}/login`, fills the password and submits.
+2. **Token Harbor provider** – deep-links straight to
+   `/dashboard/providers/tokenharbor` (the provider grid is skipped).
+3. **Add** – clicks **+ Add** to open *“Add Token Harbor API Key”*.
+4. **Fill** – sets **Name** to the created account email and **API Key** to its
+   `thk_live_…` secret (Priority and Proxy Pool keep their defaults).
+5. **Save** – submits the dialog.
+
+The step is **best-effort**: if 9Router is unreachable or the password is wrong
+the account is still reported as created (`ok: true`) and the failure is recorded
+in its `nine_router` object, e.g. `{ "ok": false, "error_kind": "auth", … }`.
+Each account connects in its own browser context, so parallel workers never share
+an authenticated 9Router session.
 
 ## Using a generated key
 

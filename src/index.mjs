@@ -14,6 +14,7 @@
 
 import { writeFile } from "node:fs/promises";
 import { provisionOne } from "./core/provision.mjs";
+import { connectAccount } from "./ninerouter/client.mjs";
 import { buildOptions, parseProxy } from "./utils/config.mjs";
 import { log, color } from "./utils/logger.mjs";
 
@@ -41,6 +42,9 @@ function help() {
         --inbox-api-key KEY     API key for the 'smtp-dev' provider (or TH_INBOX_API_KEY)
         --password PW           fixed password (>=12 chars; default random)
         --key-name NAME         fixed API-key label (default random)
+        --connect-9router       add each created key to 9Router   (or TH_CONNECT_9ROUTER)
+        --9router-url URL       9Router base URL                  (default http://localhost:20128)
+        --9router-password PW   9Router dashboard password        (default 123456)
         --proxy URL             proxy for the browser            (or TH_PROXY)
         --headful               show the browser
         --keep-browser          leave the browser open at the end (debugging)
@@ -52,6 +56,7 @@ function help() {
   Examples:
     node src/index.mjs
     node src/index.mjs -n 5 --concurrency 2
+    node src/index.mjs -n 3 --connect-9router
     node src/index.mjs -n 3 --proxy http://user:pass@host:port
     TH_PROXY=socks5://127.0.0.1:1080 node src/index.mjs -n 2 --retries 5
 `);
@@ -134,6 +139,7 @@ async function main() {
   );
   log.info(`inbox=${opts.inboxProvider}`);
   log.info(proxy ? `proxy: ${proxy.server}` : "proxy: none (direct)");
+  if (opts.connectNineRouter) log.info(`9router: ${opts.nineRouterUrl}`);
 
   const { chromium } = await loadPlaywright();
   const browser = await chromium.launch({
@@ -175,6 +181,31 @@ async function main() {
           password: opts.password,
           keyName: opts.keyName,
         });
+
+        // Optionally connect the freshly created key to 9Router. This runs on
+        // the (now signed-out) platform context, so each account logs into
+        // 9Router in its own cookie jar and never shares a session.
+        if (r.ok && opts.connectNineRouter) {
+          const page = await platformContext.newPage();
+          try {
+            r.nine_router = await connectAccount(page, r, {
+              baseUrl: opts.nineRouterUrl,
+              password: opts.nineRouterPassword,
+              retries: 2,
+            });
+          } catch (err) {
+            r.nine_router = {
+              ok: false,
+              url: opts.nineRouterUrl,
+              error: err.message,
+              error_kind: "other",
+            };
+            log.warn(`9Router connect failed for ${r.email}: ${err.message}`);
+          } finally {
+            await page.close().catch(() => {});
+          }
+        }
+
         results[i] = r;
         await flush();
       } finally {
@@ -200,6 +231,14 @@ async function main() {
   for (const r of done) {
     if (r.ok) log.raw(`  ${color.green("✔")} ${r.email}  ${color.dim(`key=${r.api_key}`)}`);
     else log.raw(`  ${color.red("✘")} ${r.email || "?"}  ${color.dim(`${r.error_kind}: ${r.error}`)}`);
+  }
+  if (opts.connectNineRouter && ok > 0) {
+    const connected = done.filter((r) => r.ok && r.nine_router?.ok).length;
+    const failed = ok - connected;
+    const detail = failed > 0 ? color.dim(` (${failed} failed)`) : "";
+    const line = `${connected}/${ok} connected to 9Router @ ${opts.nineRouterUrl}${detail}`;
+    if (failed > 0) log.warn(`9router: ${line}`);
+    else log.info(`9router: ${line}`);
   }
   process.exit(ok === opts.count ? 0 : 1);
 }
