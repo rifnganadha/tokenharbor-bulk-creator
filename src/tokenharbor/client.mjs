@@ -8,11 +8,14 @@
  *   2. fill EMAIL + PASSWORD (>=12), click "Create account"
  *      -> POST /api/auth/signup-precheck, then a Supabase-backed session is set
  *      -> redirect to /dashboard (signed in immediately)
- *   3. dashboard shows "Verify your email to make API calls"
+ *   3. dashboard offers free models through a first-run modal ("Enable free
+ *      models?") and/or an "Enable free models" switch under Data & privacy
+ *      -> opt in *before* verifying, so the account lands with free models on
+ *   4. dashboard shows "Verify your email to make API calls"
  *      -> click "Verify email" (mails a link to tokenharbor.ai/verify-email?token=…)
- *   4. inbox reader returns that link; navigate to it
+ *   5. inbox reader returns that link; navigate to it
  *      -> /dashboard?verify=success   ("Email verified — API access is on")
- *   5. sidebar "API Key" -> "+ New key" -> type a LABEL -> "Create key"
+ *   6. sidebar "API Key" -> "+ New key" -> type a LABEL -> "Create key"
  *      -> the one-time `thk_live_…` secret is shown exactly once
  *
  * There is no Cloudflare Turnstile on Token Harbor as of this writing; the
@@ -92,13 +95,11 @@ export async function signup(page, email, password, opts = {}) {
   await passInput.waitFor({ state: "visible", timeout: 15000 });
   await passInput.fill(password);
 
-  await sleep(10000);
-
   await Promise.all([
     page.waitForLoadState("domcontentloaded").catch(() => {}),
     page.getByRole("button", { name: /create account/i }).first().click(),
   ]);
-  await sleep(10000);
+  await sleep(3000);
 
   let text = await textOf(page);
 
@@ -135,15 +136,92 @@ export async function signup(page, email, password, opts = {}) {
 }
 
 /**
- * Step 3: click "Verify email" on the dashboard.
+ * Step 3: opt in to free models on the dashboard.
+ *
+ * Token Harbor surfaces the free-models opt-in in two places: a first-run
+ * modal ("Enable free models?") that otherwise covers the dashboard, and the
+ * "Enable free models" switch in the Data & privacy card. Either is enough, so
+ * both are handled — the modal is accepted when it appears (instead of being
+ * dismissed with "Not now") and the switch is flipped when it does not.
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<boolean>} true once free models are enabled (best effort)
+ */
+export async function enableFreeModels(page) {
+  await sleep(1500);
+
+  // 1. First-run modal ("Enable free models?"). Accept its affirmative action;
+  //    never the dismissive "Not now" / "Skip" options.
+  const dialog = page.locator('[role="dialog"], [aria-modal="true"]').first();
+  if (await dialog.isVisible().catch(() => false)) {
+    const accept = dialog
+      .getByRole("button", {
+        name: /enable free models|turn on( free models)?|enable|allow|accept|opt in|got it|^yes$|continue/i,
+      })
+      .first();
+    if (await accept.isVisible().catch(() => false)) {
+      await accept.click({ timeout: 5000 }).catch(() => {});
+      await sleep(1200);
+      log.ok("free models enabled");
+      return true;
+    }
+    // A dialog with no affirmative action (e.g. "Not now" only): leave it for
+    // the caller to dismiss and fall through to the switch below.
+  }
+
+  // 2. The "Enable free models" switch in the Data & privacy card.
+  const outcome = await page
+    .evaluate(() => {
+      const nodes = Array.from(document.querySelectorAll("body *"));
+      const label = nodes.find(
+        (n) => n.children.length === 0 && /enable free models/i.test(n.textContent || ""),
+      );
+      if (!label) return "missing";
+      // Walk up a few levels to the row that also holds the control.
+      let scope = label.parentElement;
+      for (let i = 0; i < 5 && scope; i++) {
+        const ctl = scope.querySelector(
+          '[role="switch"], [role="checkbox"], input[type="checkbox"], button[aria-pressed]',
+        );
+        if (ctl) {
+          const on =
+            ctl.getAttribute("aria-checked") === "true" ||
+            ctl.getAttribute("aria-pressed") === "true" ||
+            (ctl.tagName === "INPUT" && ctl.checked);
+          if (on) return "already";
+          ctl.click();
+          return "enabled";
+        }
+        scope = scope.parentElement;
+      }
+      return "missing";
+    })
+    .catch(() => "error");
+
+  if (outcome === "enabled") {
+    await sleep(1000);
+    log.ok("free models enabled");
+    return true;
+  }
+  if (outcome === "already") {
+    log.info("free models already enabled");
+    return true;
+  }
+  log.warn("free-models toggle not found; continuing");
+  return false;
+}
+
+/**
+ * Step 4: click "Verify email" on the dashboard.
  * Returns true if Token Harbor acknowledged the send.
  *
  * @param {import('playwright').Page} page
  */
 export async function requestVerificationEmail(page) {
-  // The modal ("Enable free models?") may cover the button; dismiss it.
+  // Any residual "Enable free models?" modal is dismissed here; free models
+  // are opted into earlier by `enableFreeModels`.
   await page
-    .getByRole("button", { name: /^not now$/i })
+    .getByRole("button", { name: /^not now$|^skip$|^later$/i })
     .first()
     .click({ timeout: 3000 })
     .catch(() => {});

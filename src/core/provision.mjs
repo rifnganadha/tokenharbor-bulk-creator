@@ -114,19 +114,23 @@ async function attempt(platformContext, inboxContext, opts, attemptNo) {
     // 2. Sign up.
     await tokenharbor.signup(platformPage, email, password, opts);
 
-    // 3. Ask for the verification email.
+    // 3. Opt in to free models before verifying, so the account lands with
+    //    free models enabled (modal or Data & privacy switch).
+    const freeModels = await tokenharbor.enableFreeModels(platformPage);
+
+    // 4. Ask for the verification email.
     await tokenharbor.requestVerificationEmail(platformPage);
 
-    // 4. Read the link from the inbox and follow it.
+    // 5. Read the link from the inbox and follow it.
     log.step(`waiting for the verification email at ${email}`);
     const link = await inbox.waitForVerificationLink(email, { timeout: opts.timeout });
     log.info("verification link received");
     await tokenharbor.openVerificationLink(platformPage, link);
 
-    // 5. Create the API key.
+    // 6. Create the API key.
     const apiKey = await tokenharbor.createApiKey(platformPage, keyName);
 
-    // 6. The API key is all we need from this session, so sign out and erase
+    // 7. The API key is all we need from this session, so sign out and erase
     //    the browser's cookies and stored site data before moving on.
     log.step("clearing session and site data");
     await clearSiteData(platformContext, platformPage);
@@ -137,6 +141,7 @@ async function attempt(platformContext, inboxContext, opts, attemptNo) {
       password,
       api_key: apiKey,
       key_name: keyName,
+      free_models: freeModels,
       api_base: "https://api.tokenharbor.ai/v1",
       email_provider: created.provider,
       elapsed_ms: Date.now() - started,

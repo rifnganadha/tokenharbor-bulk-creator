@@ -46,7 +46,7 @@ the page does the work, and the results are scraped from the rendered dashboard.
 ## Features
 
 - **Disposable mailboxes** – creates a unique temp-email.dev (or smtp.dev) inbox per account.
-- **Full onboarding** – signup → email verification → API key, end to end.
+- **Full onboarding** – signup → free-models opt-in → email verification → API key, end to end.
 - **Random identity** – emails, passwords (12+ chars) and key labels are unpredictable.
 - **Auto API keys** – named like `prod-token-7421`, prefix `thk_live_`.
 - **Session wiped** – once a key is minted, the browser's cookies and site data
@@ -183,6 +183,7 @@ kind `rate-limit` and is **not** retried further. For large batches keep
       "password": "…",
       "api_key": "thk_live_…",
       "key_name": "prod-token-7421",
+      "free_models": true,
       "api_base": "https://api.tokenharbor.ai/v1",
       "email_provider": "temp-email.dev",
       "elapsed_ms": 41230,
